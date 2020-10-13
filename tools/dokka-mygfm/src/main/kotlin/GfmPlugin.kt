@@ -201,7 +201,10 @@ open class CommonmarkRenderer(
             append("|---".repeat(size))
             if (size > 0) append("|\n")
 
-            node.children.forEach {
+            node.children.filterNot {
+                val dri = it.dci.dri.first()
+                dri.packageName == "kotlin" && dri.classNames == "Any"
+            }.forEach {
                 val builder = StringBuilder()
                 it.children.forEach {
                     builder.append("| ")
