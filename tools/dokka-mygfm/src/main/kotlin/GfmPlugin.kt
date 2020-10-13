@@ -367,4 +367,18 @@ class MarkdownLocationProviderFactory(val context: DokkaContext) : LocationProvi
 class MarkdownLocationProvider(
     pageGraphRoot: RootPageNode,
     dokkaContext: DokkaContext
-) : DokkaLocationProvider(pageGraphRoot, dokkaContext, ".md")
+) : DokkaLocationProvider(pageGraphRoot, dokkaContext, ".md") {
+
+    override fun pathTo(node: PageNode, context: PageNode?): String {
+        return super.pathTo(node, context).removePrefix("libui/")
+    }
+
+    override fun ancestors(node: PageNode): List<PageNode> {
+        return generateSequence(node) { it.parent() }
+            .filterNot { it is RendererSpecificPage }
+            .filterNot { it is ModulePageNode }
+            .toList()
+    }
+
+    private fun PageNode.parent() = pageGraphRoot.parentMap[this]
+}
