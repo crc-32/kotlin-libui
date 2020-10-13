@@ -369,6 +369,8 @@ class MarkdownLocationProvider(
     dokkaContext: DokkaContext
 ) : DokkaLocationProvider(pageGraphRoot, dokkaContext, ".md") {
 
+    override val PAGE_WITH_CHILDREN_SUFFIX = "README"
+
     override fun pathTo(node: PageNode, context: PageNode?): String {
         return super.pathTo(node, context).removePrefix("libui/")
     }
