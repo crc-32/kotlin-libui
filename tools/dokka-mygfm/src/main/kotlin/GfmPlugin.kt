@@ -49,13 +49,57 @@ class GfmPlugin : DokkaPlugin() {
 }
 
 open class MarkdownBuilder {
+    var inlineCodeBlockLevel = 0
+    val inInlineCodeBlock: Boolean get() = inlineCodeBlockLevel > 0
+    var codeBlockIsTerminated = true
     val stringBuilder = StringBuilder()
 
     open fun append(content: String): Unit = with(stringBuilder) {
+        if (inInlineCodeBlock) {
+            if (codeBlockIsTerminated) {
+                append('`')
+                codeBlockIsTerminated = false
+            }
+        }
         append(content)
     }
 
+    open fun appendNonCode(content: String): Unit = with(stringBuilder) {
+        if (inInlineCodeBlock && !codeBlockIsTerminated) {
+            append('`')
+            codeBlockIsTerminated = true
+        }
+        append(content)
+    }
+
+    open fun appendNewLine(): Unit = with(stringBuilder) {
+        if (inInlineCodeBlock && !codeBlockIsTerminated) {
+            stringBuilder.append('`')
+            codeBlockIsTerminated = true
+        }
+        append('\n')
+    }
+
+    open fun pushInlineCodeBlock() {
+        inlineCodeBlockLevel++
+    }
+
+    open fun popInlineCodeBlock() {
+        val previousLevel = inlineCodeBlockLevel
+        inlineCodeBlockLevel = (inlineCodeBlockLevel - 1).coerceAtLeast(0)
+        if (previousLevel > 0 && inlineCodeBlockLevel == 0 && !codeBlockIsTerminated) {
+            stringBuilder.append('`')
+        }
+        codeBlockIsTerminated = true
+    }
+
     open fun build(): String = stringBuilder.toString()
+}
+
+inline fun MarkdownBuilder.inlineCodeBlock(block: MarkdownBuilder.() -> Unit) {
+    pushInlineCodeBlock()
+    block()
+    popInlineCodeBlock()
 }
 
 inline fun buildMarkdown(block: MarkdownBuilder.() -> Unit): String {
@@ -74,6 +118,10 @@ open class MarkdownRenderer(
         childrenCallback: MarkdownBuilder.() -> Unit
     ) {
         return when {
+            node.dci.kind == ContentKind.Symbol && node.hasStyle(TextStyle.Monospace) -> {
+                inlineCodeBlock { childrenCallback() }
+                appendNewLine()
+            }
             node.hasStyle(TextStyle.Block) -> {
                 childrenCallback()
                 buildNewLine()
@@ -95,9 +143,9 @@ open class MarkdownRenderer(
     }
 
     override fun MarkdownBuilder.buildLink(address: String, content: MarkdownBuilder.() -> Unit) {
-        append("[")
+        appendNonCode("[")
         content()
-        append("]($address)")
+        appendNonCode("]($address)")
     }
 
     override fun MarkdownBuilder.buildList(
@@ -239,7 +287,7 @@ open class MarkdownRenderer(
 
     override fun MarkdownBuilder.buildText(textNode: ContentText) {
         if (textNode.text.isNotBlank()) {
-            val decorators = decorators(textNode.style)
+            val decorators = if (!inInlineCodeBlock) decorators(textNode.style) else ""
             append(textNode.text.takeWhile { it == ' ' })
             append(decorators)
             append(textNode.text.trim())
@@ -325,6 +373,19 @@ open class MarkdownRenderer(
 
             buildParagraph()
         }
+    }
+
+    override fun MarkdownBuilder.buildCodeBlock(code: ContentCodeBlock, pageContext: ContentPage) {
+        append("```kotlin")
+        appendNewLine()
+        code.children.forEach { it.build(this, pageContext) }
+        append("```")
+    }
+
+    override fun MarkdownBuilder.buildCodeInline(code: ContentCodeInline, pageContext: ContentPage) {
+        append("`")
+        code.children.forEach { it.build(this, pageContext) }
+        append("`")
     }
 
     private fun decorators(styles: Set<Style>) = buildString {
