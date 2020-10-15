@@ -27,7 +27,7 @@ class GfmPlugin : DokkaPlugin() {
 
     val renderer by extending {
         (CoreExtensions.renderer
-                providing { CommonmarkRenderer(it) }
+                providing { MarkdownRenderer(it) }
                 override dokkaBase.htmlRenderer)
     }
 
@@ -48,16 +48,30 @@ class GfmPlugin : DokkaPlugin() {
     }
 }
 
-open class CommonmarkRenderer(
+open class MarkdownBuilder {
+    val stringBuilder = StringBuilder()
+
+    open fun append(content: String): Unit = with(stringBuilder) {
+        append(content)
+    }
+
+    open fun build(): String = stringBuilder.toString()
+}
+
+inline fun buildMarkdown(block: MarkdownBuilder.() -> Unit): String {
+    return MarkdownBuilder().apply(block).build()
+}
+
+open class MarkdownRenderer(
     context: DokkaContext
-) : DefaultRenderer<StringBuilder>(context) {
+) : DefaultRenderer<MarkdownBuilder>(context) {
 
     override val preprocessors = context.plugin<GfmPlugin>().query { gfmPreprocessors }
 
-    override fun StringBuilder.wrapGroup(
+    override fun MarkdownBuilder.wrapGroup(
         node: ContentGroup,
         pageContext: ContentPage,
-        childrenCallback: StringBuilder.() -> Unit
+        childrenCallback: MarkdownBuilder.() -> Unit
     ) {
         return when {
             node.hasStyle(TextStyle.Block) -> {
@@ -73,20 +87,20 @@ open class CommonmarkRenderer(
         }
     }
 
-    override fun StringBuilder.buildHeader(level: Int, node: ContentHeader, content: StringBuilder.() -> Unit) {
+    override fun MarkdownBuilder.buildHeader(level: Int, node: ContentHeader, content: MarkdownBuilder.() -> Unit) {
         buildParagraph()
         append("#".repeat(level) + " ")
         content()
         buildNewLine()
     }
 
-    override fun StringBuilder.buildLink(address: String, content: StringBuilder.() -> Unit) {
+    override fun MarkdownBuilder.buildLink(address: String, content: MarkdownBuilder.() -> Unit) {
         append("[")
         content()
         append("]($address)")
     }
 
-    override fun StringBuilder.buildList(
+    override fun MarkdownBuilder.buildList(
         node: ContentList,
         pageContext: ContentPage,
         sourceSetRestriction: Set<DisplaySourceSet>?
@@ -94,19 +108,19 @@ open class CommonmarkRenderer(
         buildListLevel(node, pageContext)
     }
 
-    private fun StringBuilder.buildListItem(items: List<ContentNode>, pageContext: ContentPage) {
+    private fun MarkdownBuilder.buildListItem(items: List<ContentNode>, pageContext: ContentPage) {
         items.forEach {
             if (it is ContentList) {
                 buildList(it, pageContext)
             } else {
                 append("<li>")
-                append(buildString { it.build(this, pageContext, it.sourceSets) }.trim())
+                append(buildMarkdown { it.build(this, pageContext, it.sourceSets) }.trim())
                 append("</li>")
             }
         }
     }
 
-    private fun StringBuilder.buildListLevel(node: ContentList, pageContext: ContentPage) {
+    private fun MarkdownBuilder.buildListLevel(node: ContentList, pageContext: ContentPage) {
         if (node.ordered) {
             append("<ol>")
             buildListItem(node.children, pageContext)
@@ -118,15 +132,15 @@ open class CommonmarkRenderer(
         }
     }
 
-    override fun StringBuilder.buildNewLine() {
+    override fun MarkdownBuilder.buildNewLine() {
         append("  \n")
     }
 
-    private fun StringBuilder.buildParagraph() {
+    private fun MarkdownBuilder.buildParagraph() {
         append("\n\n")
     }
 
-    override fun StringBuilder.buildPlatformDependent(
+    override fun MarkdownBuilder.buildPlatformDependent(
         content: PlatformHintedContent,
         pageContext: ContentPage,
         sourceSetRestriction: Set<DisplaySourceSet>?
@@ -134,7 +148,7 @@ open class CommonmarkRenderer(
         buildPlatformDependentItem(content.inner, content.sourceSets, pageContext)
     }
 
-    private fun StringBuilder.buildPlatformDependentItem(
+    private fun MarkdownBuilder.buildPlatformDependentItem(
         content: ContentNode,
         sourceSets: Set<DisplaySourceSet>,
         pageContext: ContentPage,
@@ -143,7 +157,7 @@ open class CommonmarkRenderer(
             buildContentNode(content, pageContext, sourceSets)
         } else {
             val distinct = sourceSets.map {
-                it to buildString { buildContentNode(content, pageContext, setOf(it)) }
+                it to buildMarkdown { buildContentNode(content, pageContext, setOf(it)) }
             }.groupBy(Pair<DisplaySourceSet, String>::second, Pair<DisplaySourceSet, String>::first)
 
             distinct.filter { it.key.isNotBlank() }.forEach { (text, platforms) ->
@@ -155,14 +169,14 @@ open class CommonmarkRenderer(
         }
     }
 
-    override fun StringBuilder.buildResource(node: ContentEmbeddedResource, pageContext: ContentPage) {
+    override fun MarkdownBuilder.buildResource(node: ContentEmbeddedResource, pageContext: ContentPage) {
         if(node.isImage()){
             append("!")
         }
         append("[${node.altText}](${node.address})")
     }
 
-    override fun StringBuilder.buildTable(
+    override fun MarkdownBuilder.buildTable(
         node: ContentTable,
         pageContext: ContentPage,
         sourceSetRestriction: Set<DisplaySourceSet>?
@@ -205,25 +219,25 @@ open class CommonmarkRenderer(
                 val dri = it.dci.dri.first()
                 dri.packageName == "kotlin" && dri.classNames == "Any"
             }.forEach {
-                val builder = StringBuilder()
+                val builder = MarkdownBuilder()
                 it.children.forEach {
                     builder.append("| ")
                     builder.append("<a name=\"${it.dci.dri.first()}\"></a>")
                     builder.append(
-                        buildString { it.build(this, pageContext) }.replace(
+                        buildMarkdown { it.build(this, pageContext) }.replace(
                             Regex("#+ "),
                             ""
                         )
                     )  // Workaround for headers inside tables
                 }
-                append(builder.toString().withEntersAsHtml())
+                append(builder.build().withEntersAsHtml())
                 append(" | ".repeat(size - it.children.size))
                 append("\n")
             }
         }
     }
 
-    override fun StringBuilder.buildText(textNode: ContentText) {
+    override fun MarkdownBuilder.buildText(textNode: ContentText) {
         if (textNode.text.isNotBlank()) {
             val decorators = decorators(textNode.style)
             append(textNode.text.takeWhile { it == ' ' })
@@ -234,7 +248,7 @@ open class CommonmarkRenderer(
         }
     }
 
-    override fun StringBuilder.buildNavigation(page: PageNode) {
+    override fun MarkdownBuilder.buildNavigation(page: PageNode) {
         locationProvider.ancestors(page).asReversed().forEach { node ->
             append("/")
             if (node.isNavigable) buildLink(node, page)
@@ -243,8 +257,8 @@ open class CommonmarkRenderer(
         buildParagraph()
     }
 
-    override fun buildPage(page: ContentPage, content: (StringBuilder, ContentPage) -> Unit): String =
-        buildString {
+    override fun buildPage(page: ContentPage, content: (MarkdownBuilder, ContentPage) -> Unit): String =
+        buildMarkdown {
             content(this, page)
         }
 
@@ -252,16 +266,16 @@ open class CommonmarkRenderer(
         context.logger.warn("Markdown renderer has encountered problem. The unmatched node is $node")
     }
 
-    override fun StringBuilder.buildDivergent(node: ContentDivergentGroup, pageContext: ContentPage) {
+    override fun MarkdownBuilder.buildDivergent(node: ContentDivergentGroup, pageContext: ContentPage) {
 
         val distinct =
             node.groupDivergentInstances(pageContext, { instance, contentPage, sourceSet ->
                 instance.before?.let { before ->
-                    buildString { buildContentNode(before, pageContext, sourceSet) }
+                    buildMarkdown { buildContentNode(before, pageContext, sourceSet) }
                 } ?: ""
             }, { instance, contentPage, sourceSet ->
                 instance.after?.let { after ->
-                    buildString { buildContentNode(after, pageContext, sourceSet) }
+                    buildMarkdown { buildContentNode(after, pageContext, sourceSet) }
                 } ?: ""
             })
 
@@ -283,7 +297,7 @@ open class CommonmarkRenderer(
 
             append("Content")
             buildNewLine()
-            entry.groupBy { buildString { buildContentNode(it.first.divergent, pageContext, setOf(it.second)) } }
+            entry.groupBy { buildMarkdown { buildContentNode(it.first.divergent, pageContext, setOf(it.second)) } }
                 .values.forEach { innerEntry ->
                     val (innerInstance, innerSourceSets) = innerEntry.getInstanceAndSourceSets()
                     if (sourceSets.size > 1) {
@@ -328,7 +342,7 @@ open class CommonmarkRenderer(
     private val PageNode.isNavigable: Boolean
         get() = this !is RendererSpecificPage || strategy != RenderingStrategy.DoNothing
 
-    private fun StringBuilder.buildLink(to: PageNode, from: PageNode) =
+    private fun MarkdownBuilder.buildLink(to: PageNode, from: PageNode) =
         buildLink(locationProvider.resolve(to, from)!!) {
             append(to.name)
         }
