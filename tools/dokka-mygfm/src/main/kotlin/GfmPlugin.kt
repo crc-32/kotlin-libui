@@ -124,22 +124,25 @@ open class MarkdownRenderer(
             }
             node.hasStyle(TextStyle.Block) -> {
                 childrenCallback()
-                buildNewLine()
+                appendNewLine()
             }
             node.hasStyle(TextStyle.Paragraph) -> {
-                buildParagraph()
+                appendNewLine()
+                appendNewLine()
                 childrenCallback()
-                buildParagraph()
+                appendNewLine()
+                appendNewLine()
             }
             else -> childrenCallback()
         }
     }
 
     override fun MarkdownBuilder.buildHeader(level: Int, node: ContentHeader, content: MarkdownBuilder.() -> Unit) {
-        buildParagraph()
+        appendNewLine()
+        appendNewLine()
         append("#".repeat(level) + " ")
         content()
-        buildNewLine()
+        appendNewLine()
     }
 
     override fun MarkdownBuilder.buildLink(address: String, content: MarkdownBuilder.() -> Unit) {
@@ -181,11 +184,7 @@ open class MarkdownRenderer(
     }
 
     override fun MarkdownBuilder.buildNewLine() {
-        append("  \n")
-    }
-
-    private fun MarkdownBuilder.buildParagraph() {
-        append("\n\n")
+        append("\\\n")
     }
 
     override fun MarkdownBuilder.buildPlatformDependent(
@@ -212,7 +211,7 @@ open class MarkdownRenderer(
                 append(" ")
                 buildSourceSetTags(platforms.toSet())
                 append(" $text ")
-                buildNewLine()
+                appendNewLine()
             }
         }
     }
@@ -229,18 +228,18 @@ open class MarkdownRenderer(
         pageContext: ContentPage,
         sourceSetRestriction: Set<DisplaySourceSet>?
     ) {
-        buildNewLine()
+        appendNewLine()
         if (node.dci.kind == ContentKind.Sample || node.dci.kind == ContentKind.Parameters) {
             node.sourceSets.forEach { sourcesetData ->
                 append(sourcesetData.name)
-                buildNewLine()
+                appendNewLine()
                 buildTable(
                     node.copy(
                         children = node.children.filter { it.sourceSets.contains(sourcesetData) },
                         dci = node.dci.copy(kind = ContentKind.Main)
                     ), pageContext, sourceSetRestriction
                 )
-                buildNewLine()
+                appendNewLine()
             }
         } else {
             val size = node.header.size
@@ -254,14 +253,20 @@ open class MarkdownRenderer(
                     }
                     append("| ")
                 }
-                append("\n")
+                appendNewLine()
             } else {
                 append("| ".repeat(size))
-                if (size > 0) append("|\n")
+                if (size > 0) {
+                    append("|")
+                    appendNewLine()
+                }
             }
 
             append("|---".repeat(size))
-            if (size > 0) append("|\n")
+            if (size > 0) {
+                append("|")
+                appendNewLine()
+            }
 
             node.children.filterNot {
                 val dri = it.dci.dri.first()
@@ -280,7 +285,7 @@ open class MarkdownRenderer(
                 }
                 append(builder.build().withEntersAsHtml())
                 append(" | ".repeat(size - it.children.size))
-                append("\n")
+                appendNewLine()
             }
         }
     }
@@ -302,7 +307,8 @@ open class MarkdownRenderer(
             if (node.isNavigable) buildLink(node, page)
             else append(node.name)
         }
-        buildParagraph()
+        appendNewLine()
+        appendNewLine()
     }
 
     override fun buildPage(page: ContentPage, content: (MarkdownBuilder, ContentPage) -> Unit): String =
@@ -331,47 +337,48 @@ open class MarkdownRenderer(
             val (instance, sourceSets) = entry.getInstanceAndSourceSets()
 
             buildSourceSetTags(sourceSets)
-            buildNewLine()
+            appendNewLine()
             instance.before?.let {
                 append("Brief description")
-                buildNewLine()
+                appendNewLine()
                 buildContentNode(
                     it,
                     pageContext,
                     sourceSets.first()
                 ) // It's workaround to render content only once
-                buildNewLine()
+                appendNewLine()
             }
 
             append("Content")
-            buildNewLine()
+            appendNewLine()
             entry.groupBy { buildMarkdown { buildContentNode(it.first.divergent, pageContext, setOf(it.second)) } }
                 .values.forEach { innerEntry ->
                     val (innerInstance, innerSourceSets) = innerEntry.getInstanceAndSourceSets()
                     if (sourceSets.size > 1) {
                         buildSourceSetTags(innerSourceSets)
-                        buildNewLine()
+                        appendNewLine()
                     }
                     innerInstance.divergent.build(
                         this@buildDivergent,
                         pageContext,
                         setOf(innerSourceSets.first())
                     ) // It's workaround to render content only once
-                    buildNewLine()
+                    appendNewLine()
                 }
 
             instance.after?.let {
                 append("More info")
-                buildNewLine()
+                appendNewLine()
                 buildContentNode(
                     it,
                     pageContext,
                     sourceSets.first()
                 ) // It's workaround to render content only once
-                buildNewLine()
+                appendNewLine()
             }
 
-            buildParagraph()
+            appendNewLine()
+            appendNewLine()
         }
     }
 
