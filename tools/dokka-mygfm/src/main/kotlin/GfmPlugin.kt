@@ -128,9 +128,7 @@ open class MarkdownRenderer(
             }
             node.hasStyle(TextStyle.Paragraph) -> {
                 appendNewLine()
-                appendNewLine()
                 childrenCallback()
-                appendNewLine()
                 appendNewLine()
             }
             else -> childrenCallback()
@@ -138,7 +136,6 @@ open class MarkdownRenderer(
     }
 
     override fun MarkdownBuilder.buildHeader(level: Int, node: ContentHeader, content: MarkdownBuilder.() -> Unit) {
-        appendNewLine()
         appendNewLine()
         append("#".repeat(level) + " ")
         content()
@@ -207,10 +204,9 @@ open class MarkdownRenderer(
                 it to buildMarkdown { buildContentNode(content, pageContext, setOf(it)) }
             }.groupBy(Pair<DisplaySourceSet, String>::second, Pair<DisplaySourceSet, String>::first)
 
-            distinct.filter { it.key.isNotBlank() }.forEach { (text, platforms) ->
-                append(" ")
-                buildSourceSetTags(platforms.toSet())
-                append(" $text ")
+            distinct.filter { it.key.isNotBlank() }.forEach { (text, _) ->
+                appendNewLine()
+                append(text)
                 appendNewLine()
             }
         }
@@ -245,13 +241,13 @@ open class MarkdownRenderer(
             val size = node.header.size
 
             if (node.header.isNotEmpty()) {
-                append("| ")
+                append("|")
                 node.header.forEach {
                     it.children.forEach {
                         append(" ")
                         it.build(this, pageContext, it.sourceSets)
                     }
-                    append("| ")
+                    append(" |")
                 }
                 appendNewLine()
             } else {
@@ -275,16 +271,17 @@ open class MarkdownRenderer(
                 val builder = MarkdownBuilder()
                 it.children.forEach {
                     builder.append("| ")
-                    builder.append("<a name=\"${it.dci.dri.first()}\"></a>")
                     builder.append(
                         buildMarkdown { it.build(this, pageContext) }.replace(
                             Regex("#+ "),
                             ""
-                        )
+                        ).trim()
                     )  // Workaround for headers inside tables
+                    builder.append(" ")
                 }
                 append(builder.build().withEntersAsHtml())
-                append(" | ".repeat(size - it.children.size))
+                append("| ".repeat(size - it.children.size))
+                append("|")
                 appendNewLine()
             }
         }
@@ -302,12 +299,11 @@ open class MarkdownRenderer(
     }
 
     override fun MarkdownBuilder.buildNavigation(page: PageNode) {
-        locationProvider.ancestors(page).asReversed().forEach { node ->
-            append("/")
+        locationProvider.ancestors(page).asReversed().forEachIndexed { i, node ->
+            if (i > 0) append(" / ")
             if (node.isNavigable) buildLink(node, page)
             else append(node.name)
         }
-        appendNewLine()
         appendNewLine()
     }
 
@@ -336,28 +332,10 @@ open class MarkdownRenderer(
         distinct.values.forEach { entry ->
             val (instance, sourceSets) = entry.getInstanceAndSourceSets()
 
-            buildSourceSetTags(sourceSets)
-            appendNewLine()
-            instance.before?.let {
-                append("Brief description")
-                appendNewLine()
-                buildContentNode(
-                    it,
-                    pageContext,
-                    sourceSets.first()
-                ) // It's workaround to render content only once
-                appendNewLine()
-            }
-
-            append("Content")
-            appendNewLine()
             entry.groupBy { buildMarkdown { buildContentNode(it.first.divergent, pageContext, setOf(it.second)) } }
                 .values.forEach { innerEntry ->
                     val (innerInstance, innerSourceSets) = innerEntry.getInstanceAndSourceSets()
-                    if (sourceSets.size > 1) {
-                        buildSourceSetTags(innerSourceSets)
-                        appendNewLine()
-                    }
+                    appendNewLine()
                     innerInstance.divergent.build(
                         this@buildDivergent,
                         pageContext,
@@ -366,9 +344,19 @@ open class MarkdownRenderer(
                     appendNewLine()
                 }
 
-            instance.after?.let {
-                append("More info")
+            instance.before?.let {
+                //append("Brief description")
+                //appendNewLine()
+                buildContentNode(
+                    it,
+                    pageContext,
+                    sourceSets.first()
+                ) // It's workaround to render content only once
                 appendNewLine()
+            }
+            instance.after?.let {
+                //append("More info")
+                //appendNewLine()
                 buildContentNode(
                     it,
                     pageContext,
@@ -377,7 +365,6 @@ open class MarkdownRenderer(
                 appendNewLine()
             }
 
-            appendNewLine()
             appendNewLine()
         }
     }
@@ -435,7 +422,7 @@ open class MarkdownRenderer(
         }
     }
 
-    private fun String.withEntersAsHtml(): String = replace("\n", "<br>")
+    private fun String.withEntersAsHtml(): String = replace("[\n]+".toRegex(), "<br>")
 
     private fun List<Pair<ContentDivergentInstance, DisplaySourceSet>>.getInstanceAndSourceSets() =
         this.let { Pair(it.first().first, it.map { it.second }.toSet()) }
